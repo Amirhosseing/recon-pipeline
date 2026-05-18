@@ -47,15 +47,16 @@ RUN git clone https://github.com/blechschmidt/massdns.git /tmp/massdns \
     && cp bin/massdns /usr/local/bin/ \
     && rm -rf /tmp/massdns
 
-# Copy Go binaries from builder
+# Copy requirements first for layer caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy Go binaries from builder AFTER pip install to avoid Python httpx
+# overwriting the Go httpx binary (openai depends on Python httpx package)
 COPY --from=go-builder /go/bin/* /usr/local/bin/
 
 # Copy Nuclei templates
 COPY --from=go-builder /root/nuclei-templates /root/nuclei-templates
-
-# Copy requirements first for layer caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
