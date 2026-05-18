@@ -1,0 +1,54 @@
+version: "3.8"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: recon_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - recon_network
+
+  app:
+    build: .
+    container_name: recon_app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-super_secret_key_change_in_prod}
+      - ADMIN_USER=${ADMIN_USER:-administrator}
+      - ADMIN_PASS=${ADMIN_PASS:-Qwer12#$}
+      - MONGO_URI=mongodb://mongo:27017/
+      - DB_NAME=${DB_NAME:-recon_pipeline}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - HTTP_PROXY=socks5://host.docker.internal:10808
+      - HTTPS_PROXY=socks5://host.docker.internal:10808
+      - ALL_PROXY=socks5://host.docker.internal:10808
+      - LLM_API_KEY=sk-bf-e05e48a6-798c-4c1d-b9fd-13ed6b907cef
+      - LLM_BASE_URL=https://llm.snapp.tech/v1
+      - LLM_MODEL=xiaomi/mimo-v2.5-pro
+      
+    volumes:
+      # Persist scan output files
+      - scan_data:/app/scans
+      # Mount security tools from host (optional - uncomment if tools are on host)
+      # - /usr/local/bin:/host-tools
+    depends_on:
+      - mongo
+    networks:
+      - recon_network
+
+volumes:
+  mongo_data:
+  scan_data:
+
+networks:
+  recon_network:
+    driver: bridge
