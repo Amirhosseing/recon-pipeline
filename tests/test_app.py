@@ -1,5 +1,5 @@
 """
-Comprehensive pytest suite for app16v5.py
+Comprehensive pytest suite for the recon pipeline.
 
 Covers:
 - Authentication (login/logout)
@@ -27,7 +27,7 @@ from datetime import datetime
 
 import pytest
 
-# Ensure app16v5 can be imported
+# Ensure the project root is on sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Patch pymongo BEFORE importing extensions (which connects at import time)
