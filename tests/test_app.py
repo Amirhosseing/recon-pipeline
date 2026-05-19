@@ -239,7 +239,27 @@ class TestScanLifecycle:
         extensions.scan_queue["queued_scan"] = runner
         resp = authenticated_client.post("/api/stop_scan/queued_scan")
         assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["success"] is True
+        assert body["message"] == "Scan stopping..."
         runner.stop.assert_called_once()
+
+    def test_stop_scan_in_queue_updates_db(self, authenticated_client):
+        """When scan is in queue, stop() is called but DB is NOT updated by this route."""
+        extensions.db.scans.insert_one({
+            "scan_id": "queued_db",
+            "status": "running",
+            "targets": "y.com",
+            "created_at": datetime.now().isoformat(),
+        })
+        runner = MagicMock()
+        extensions.scan_queue["queued_db"] = runner
+        resp = authenticated_client.post("/api/stop_scan/queued_db")
+        assert resp.status_code == 200
+        runner.stop.assert_called_once()
+        # DB status remains "running" — the runner is responsible for updating it
+        doc = extensions.db.scans.find_one({"scan_id": "queued_db"})
+        assert doc["status"] == "running"
 
     def test_stop_scan_not_in_queue(self, authenticated_client):
         extensions.db.scans.insert_one({
@@ -250,8 +270,55 @@ class TestScanLifecycle:
         })
         resp = authenticated_client.post("/api/stop_scan/db_scan")
         assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["success"] is True
+        assert body["message"] == "Marked as stopped"
         doc = extensions.db.scans.find_one({"scan_id": "db_scan"})
         assert doc["status"] == "stopped"
+
+    def test_stop_scan_not_in_queue_already_stopped(self, authenticated_client):
+        """Stopping an already-stopped scan should succeed (idempotent)."""
+        extensions.db.scans.insert_one({
+            "scan_id": "already_stopped",
+            "status": "stopped",
+            "targets": "z.com",
+            "created_at": datetime.now().isoformat(),
+        })
+        resp = authenticated_client.post("/api/stop_scan/already_stopped")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["success"] is True
+        doc = extensions.db.scans.find_one({"scan_id": "already_stopped"})
+        assert doc["status"] == "stopped"
+
+    def test_stop_scan_nonexistent(self, authenticated_client):
+        """Scan not in queue and not in DB — update_one matches nothing, still returns 200."""
+        resp = authenticated_client.post("/api/stop_scan/ghost_scan")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["success"] is True
+        assert body["message"] == "Marked as stopped"
+
+    @patch("routes.all_routes.db")
+    def test_stop_scan_db_exception(self, mock_db, authenticated_client):
+        """When update_one raises, the route returns 500."""
+        mock_db.scans.update_one.side_effect = Exception("connection lost")
+        resp = authenticated_client.post("/api/stop_scan/broken")
+        assert resp.status_code == 500
+        body = resp.get_json()
+        assert "error" in body
+        assert "Failed to stop scan" in body["error"]
+
+    def test_stop_scan_unauthenticated(self, client):
+        """POST without login should redirect."""
+        resp = client.post("/api/stop_scan/any", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/login" in resp.headers["Location"]
+
+    def test_stop_scan_method_get_not_allowed(self, authenticated_client):
+        """Route only accepts POST."""
+        resp = authenticated_client.get("/api/stop_scan/any")
+        assert resp.status_code == 405
 
     @patch("threading.Thread")
     def test_resume_scan(self, mock_thread, authenticated_client):
